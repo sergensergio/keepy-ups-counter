@@ -11,7 +11,6 @@ Produces:
 Inference itself does NOT depend on ultralytics; only onnxruntime + opencv + numpy.
 """
 
-from __future__ import annotations
 
 import os
 import shutil

@@ -1,6 +1,5 @@
 """CLI entry point for the keepy-ups tool (v1: detect + visualize)."""
 
-from __future__ import annotations
 
 import argparse
 from pathlib import Path
