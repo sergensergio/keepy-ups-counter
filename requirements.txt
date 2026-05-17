@@ -1,0 +1,9 @@
+opencv-python>=4.8.0
+numpy>=1.24.0
+onnxruntime>=1.16.0
+
+# Only needed for the one-off `download_models.py` step.
+# Inference itself depends only on the three packages above.
+ultralytics>=8.0.0
+onnx>=1.15.0
+onnxslim>=0.1.0
