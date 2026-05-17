@@ -1,21 +1,8 @@
 from abc import ABC, abstractmethod
-from typing import List, Optional, Protocol, runtime_checkable
+from typing import List, Optional
 
 import numpy as np
 import onnxruntime as ort
-
-
-@runtime_checkable
-class Detector(Protocol):
-    """Structural interface every detection component honours.
-
-    Both `BaseOnnxDetector` subclasses and `RoiTrackingDetector` satisfy this
-    by exposing `detect(frame)` and a `reset()` hook for stateful trackers.
-    """
-
-    def detect(self, frame: np.ndarray): ...
-
-    def reset(self) -> None: ...
 
 
 class BaseOnnxDetector(ABC):
@@ -41,10 +28,6 @@ class BaseOnnxDetector(ABC):
 
     def _run(self, tensor: np.ndarray) -> List[np.ndarray]:
         return self.session.run(self.output_names, {self.input_name: tensor})
-
-    def reset(self) -> None:
-        """No-op: raw detectors are stateless. Trackers override this."""
-        return None
 
     @abstractmethod
     def detect(self, frame: np.ndarray):

@@ -6,7 +6,8 @@ from typing import Optional, Tuple
 import cv2
 import numpy as np
 
-from .base_detector import Detector
+from .ball_detector import BallDetector
+from .pose_estimator import PoseEstimator
 from .types import FrameDetections
 from .video_reader import VideoReader
 from .visualizer import Visualizer
@@ -16,18 +17,14 @@ class KeepyUpsPipeline:
     """Orchestrates the per-frame pipeline:
        read -> ball detect -> pose detect -> visualize -> write/display.
 
-    Detectors are passed in via the `Detector` protocol so the pipeline works
-    identically whether you wire it with raw `BaseOnnxDetector` subclasses or
-    `RoiTrackingDetector` wrappers — composition stays at the call site.
-
     Counting logic is intentionally out of scope for v1; this pipeline only
     surfaces the structured detections needed by a future counter component.
     """
 
     def __init__(
         self,
-        ball_detector: Detector,
-        pose_estimator: Detector,
+        ball_detector: BallDetector,
+        pose_estimator: PoseEstimator,
         visualizer: Visualizer,
     ):
         self.ball_detector = ball_detector
@@ -47,12 +44,6 @@ class KeepyUpsPipeline:
         display: bool = False,
         log_every: int = 30,
     ) -> None:
-        # Stateful detectors (e.g. RoiTrackingDetector) must not leak ROI
-        # state across independent runs; the no-op default keeps stateless
-        # detectors happy.
-        self.ball_detector.reset()
-        self.pose_estimator.reset()
-
         with VideoReader(video_path) as reader:
             writer: Optional[cv2.VideoWriter] = None
             if output_path:
