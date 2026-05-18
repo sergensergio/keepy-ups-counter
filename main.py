@@ -7,6 +7,11 @@ from pathlib import Path
 from src.ball_detector import BallDetector
 from src.pipeline import KeepyUpsPipeline
 from src.pose_estimator import PoseEstimator
+from src.postprocessors import (
+    SUPPORTED_ARCHITECTURES,
+    make_detection_postprocessor,
+    make_pose_postprocessor,
+)
 from src.visualizer import Visualizer
 
 
@@ -34,6 +39,20 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--ball-conf", type=float, default=0.25)
     p.add_argument("--pose-conf", type=float, default=0.25)
     p.add_argument(
+        "--ball-arch",
+        choices=SUPPORTED_ARCHITECTURES,
+        default="yolo11",
+        help="Architecture family of the ball-detection ONNX. "
+        "'yolo11' = transposed output + NMS. "
+        "'yolo26' = end-to-end / NMS-free output.",
+    )
+    p.add_argument(
+        "--pose-arch",
+        choices=SUPPORTED_ARCHITECTURES,
+        default="yolo11",
+        help="Architecture family of the pose ONNX (see --ball-arch).",
+    )
+    p.add_argument(
         "--input-size",
         type=int,
         default=640,
@@ -59,12 +78,14 @@ def main() -> None:
     ball_detector = BallDetector(
         args.ball_model,
         conf_threshold=args.ball_conf,
-        input_size=args.input_size
+        input_size=args.input_size,
+        postprocessor=make_detection_postprocessor(args.ball_arch),
     )
     pose_estimator = PoseEstimator(
         args.pose_model,
         conf_threshold=args.pose_conf,
-        input_size=args.input_size
+        input_size=args.input_size,
+        postprocessor=make_pose_postprocessor(args.pose_arch),
     )
     visualizer = Visualizer()
 
