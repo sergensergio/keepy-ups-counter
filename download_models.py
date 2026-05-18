@@ -1,17 +1,18 @@
-"""One-off script: download Ultralytics YOLOv8 weights and export them to ONNX.
+"""One-off script: download Ultralytics YOLO11 weights and export them to ONNX.
 
 Run this once after installing requirements:
 
     python download_models.py
 
 Produces:
-    models/yolov8n.onnx       (general COCO detector; we use class 32 = sports ball)
-    models/yolov8n-pose.onnx  (single-class person + 17 COCO keypoints)
+    models/yolo11n.onnx       (general COCO detector; we use class 32 = sports ball)
+    models/yolo11n-pose.onnx  (single-class person + 17 COCO keypoints)
 
 Inference itself does NOT depend on ultralytics; only onnxruntime + opencv + numpy.
 """
 
 
+import argparse
 import os
 import shutil
 from pathlib import Path
@@ -25,9 +26,9 @@ def export(name: str, imgsz: int = 640, opset: int = 12) -> None:
 
     MODELS_DIR.mkdir(exist_ok=True)
     onnx_target = MODELS_DIR / f"{name}.onnx"
-    if onnx_target.exists():
-        print(f"[skip] {onnx_target} already exists")
-        return
+    # if onnx_target.exists():
+    #     print(f"[skip] {onnx_target} already exists")
+    #     return
 
     cwd = os.getcwd()
     os.chdir(MODELS_DIR)
@@ -46,10 +47,18 @@ def export(name: str, imgsz: int = 640, opset: int = 12) -> None:
     print(f"[ok] exported {onnx_target}")
 
 
-def main() -> None:
-    export("yolov8n")
-    export("yolov8n-pose")
+def main(imgsz: int = 640) -> None:
+    export("yolo11n", imgsz=imgsz)
+    export("yolo11n-pose", imgsz=imgsz)
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Download and export YOLO11 ONNX models")
+    parser.add_argument(
+        "--imgsz",
+        type=int,
+        default=640,
+        help="Square input size for the exported ONNX models (must match inference-time preprocessor)",
+    )
+    args = parser.parse_args()
+    main(imgsz=args.imgsz)

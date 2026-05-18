@@ -12,9 +12,9 @@ SPORTS_BALL_CLASS_ID = 32
 
 
 class BallDetector(BaseOnnxDetector):
-    """YOLOv8n detector filtered to the COCO `sports ball` class.
+    """YOLO11 detector filtered to the COCO `sports ball` class.
 
-    YOLOv8 detection ONNX output shape: (1, 4 + num_classes, num_anchors).
+    YOLO11 detection ONNX output shape: (1, 4 + num_classes, num_anchors).
     For the default 80-class COCO model that is (1, 84, 8400).
     """
 

@@ -5,7 +5,7 @@ import numpy as np
 
 from .types import BoundingBox, Pose
 
-# COCO 17-keypoint connectivity used by YOLOv8-pose.
+# COCO 17-keypoint connectivity used by YOLO11-pose.
 # Indices:
 #  0 nose, 1 left_eye, 2 right_eye, 3 left_ear, 4 right_ear,
 #  5 l_shoulder, 6 r_shoulder, 7 l_elbow, 8 r_elbow, 9 l_wrist, 10 r_wrist,

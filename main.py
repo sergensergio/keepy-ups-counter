@@ -23,13 +23,13 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument(
         "--ball-model",
-        default="models/yolov8n.onnx",
-        help="Path to YOLOv8 detection ONNX model",
+        default="models/yolo11n.onnx",
+        help="Path to YOLO11 detection ONNX model",
     )
     p.add_argument(
         "--pose-model",
-        default="models/yolov8n-pose.onnx",
-        help="Path to YOLOv8-pose ONNX model",
+        default="models/yolo11n-pose.onnx",
+        help="Path to YOLO11-pose ONNX model",
     )
     p.add_argument("--ball-conf", type=float, default=0.25)
     p.add_argument("--pose-conf", type=float, default=0.25)

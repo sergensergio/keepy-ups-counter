@@ -17,7 +17,7 @@ class LetterboxInfo:
 
 
 class YoloPreprocessor:
-    """Letterbox-resize a BGR frame into a YOLOv8 input tensor.
+    """Letterbox-resize a BGR frame into a YOLO11 input tensor.
 
     Output tensor: shape (1, 3, S, S), float32, RGB, normalized to [0, 1].
     """

@@ -9,9 +9,9 @@ from .types import BoundingBox, Keypoint, Pose
 
 
 class PoseEstimator(BaseOnnxDetector):
-    """YOLOv8n-pose: single-class (person) detector with 17 COCO keypoints.
+    """YOLO11-pose: single-class (person) detector with 17 COCO keypoints.
 
-    YOLOv8-pose ONNX output shape: (1, 56, num_anchors), where the channel layout
+    YOLO11-pose ONNX output shape: (1, 56, num_anchors), where the channel layout
     is [cx, cy, w, h, person_conf, kp0_x, kp0_y, kp0_conf, ..., kp16_x, kp16_y, kp16_conf].
     """
 
