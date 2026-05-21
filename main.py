@@ -2,9 +2,11 @@
 
 
 import argparse
+from datetime import datetime
 from pathlib import Path
 
 from src.ball_detector import BallDetector
+from src.ball_tracker import BallTracker
 from src.pipeline import KeepyUpsPipeline
 from src.pose_estimator import PoseEstimator
 from src.postprocessors import (
@@ -24,7 +26,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--output",
         default=None,
-        help="Optional path to write annotated mp4 (e.g. out.mp4)",
+        help="Optional directory to write annotated mp4 into "
+        "(file is named annotated_<datetime>.mp4)",
     )
     p.add_argument(
         "--ball-model",
@@ -59,6 +62,39 @@ def parse_args() -> argparse.Namespace:
         help="Square model input size (must match the exported ONNX)",
     )
     p.add_argument(
+        "--no-ball-tracking",
+        action="store_true",
+        help="Disable centroid+Kalman tracking on the ball "
+        "(use raw per-frame detections only).",
+    )
+    p.add_argument(
+        "--track-activation-threshold",
+        type=float,
+        default=0.25,
+        help="Tracker: detection confidence above which a new track is started.",
+    )
+    p.add_argument(
+        "--lost-track-buffer",
+        type=int,
+        default=30,
+        help="Tracker: frames a track is kept alive without a hit before being dropped.",
+    )
+    p.add_argument(
+        "--max-distance",
+        type=float,
+        default=120.0,
+        help="Tracker: max Euclidean distance (pixels) between a detection centroid "
+        "and a track's Kalman-predicted centroid for them to be associated.",
+    )
+    p.add_argument(
+        "--gravity",
+        type=float,
+        default=1.5,
+        help="Tracker: gravitational acceleration prior in pixels/frame^2 "
+        "(positive = downward in image coords). Scene-dependent — tune to the "
+        "camera distance and frame rate of the input video.",
+    )
+    p.add_argument(
         "--display",
         action="store_true",
         help="Show annotated frames in a window (press q to quit)",
@@ -87,16 +123,36 @@ def main() -> None:
         input_size=args.input_size,
         postprocessor=make_pose_postprocessor(args.pose_arch),
     )
+
+    if args.no_ball_tracking:
+        ball_component = ball_detector
+    else:
+        ball_component = BallTracker(
+            ball_detector,
+            track_activation_threshold=args.track_activation_threshold,
+            lost_track_buffer=args.lost_track_buffer,
+            max_distance=args.max_distance,
+            gravity=args.gravity,
+        )
+
     visualizer = Visualizer()
 
     pipeline = KeepyUpsPipeline(
-        ball_detector,
+        ball_component,
         pose_estimator,
         visualizer
     )
+
+    output_path = None
+    if args.output is not None:
+        output_dir = Path(args.output)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_path = str(output_dir / f"annotated_{timestamp}.mp4")
+
     pipeline.run(
         args.video,
-        output_path=args.output, 
+        output_path=output_path,
         display=args.display
     )
 
