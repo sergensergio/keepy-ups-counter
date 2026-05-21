@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import List
+from typing import List, Optional
 
 
 @dataclass
@@ -10,6 +10,9 @@ class BoundingBox:
     y2: float
     confidence: float
     class_id: int = 0
+    # Populated by tracking layers (e.g. centroid + Kalman BallTracker) and
+    # `None` for raw per-frame detections.
+    track_id: Optional[int] = None
 
     @property
     def width(self) -> float:

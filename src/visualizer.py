@@ -40,7 +40,10 @@ class Visualizer:
         x1, y1, x2, y2 = map(int, (ball.x1, ball.y1, ball.x2, ball.y2))
         cv2.rectangle(frame, (x1, y1), (x2, y2), self.ball_color, 2)
 
-        label = f"ball {ball.confidence:.2f}"
+        if ball.track_id is not None:
+            label = f"ball#{ball.track_id} {ball.confidence:.2f}"
+        else:
+            label = f"ball {ball.confidence:.2f}"
         (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
         cv2.rectangle(
             frame, (x1, max(0, y1 - th - 6)), (x1 + tw + 4, y1), self.ball_color, -1
