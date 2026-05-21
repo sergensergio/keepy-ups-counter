@@ -11,7 +11,7 @@ from .preprocessor import YoloPreprocessor
 from .types import BoundingBox
 
 # COCO class id 32 = "sports ball".
-SPORTS_BALL_CLASS_ID = 32
+SPORTS_BALL_CLASS_ID = 0
 
 
 class BallDetector(BaseOnnxDetector):
