@@ -44,7 +44,9 @@ def parse_args() -> argparse.Namespace:
         "Only used when --pose-model-type=mediapipe.",
     )
     p.add_argument("--ball-conf", type=float, default=0.25)
-    p.add_argument("--pose-conf", type=float, default=0.25)
+    p.add_argument("--pose-detection-conf", type=float, default=0.7)
+    p.add_argument("--pose-tracking-conf", type=float, default=0.5)
+    p.add_argument("--pose-keypoint-conf", type=float, default=0.5)
     p.add_argument(
         "--ball-arch",
         choices=SUPPORTED_ARCHITECTURES,
@@ -130,7 +132,9 @@ def main() -> None:
         postprocessor=make_detection_postprocessor(args.ball_arch),
     )
     pose_estimator = MediaPipePoseEstimator(
-        conf_threshold=args.pose_conf,
+        min_detection_confidence=args.pose_detection_conf,
+        min_tracking_confidence=args.pose_tracking_conf,
+        kp_conf_threshold=args.pose_keypoint_conf,
         model_complexity=args.mediapipe_complexity,
     )
 

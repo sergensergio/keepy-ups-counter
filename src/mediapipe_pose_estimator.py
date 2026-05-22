@@ -34,17 +34,19 @@ class MediaPipePoseEstimator:
 
     def __init__(
         self,
-        conf_threshold: float = 0.25,
+        min_detection_confidence: float = 0.25,
+        min_tracking_confidence: float = 0.25,
+        kp_conf_threshold: float = 0.25,
         model_complexity: int = 1,
         smooth_landmarks: bool = True,
     ):
-        self.conf_threshold = conf_threshold
+        self.kp_conf_threshold = kp_conf_threshold
         self._pose = mp.solutions.pose.Pose(
             static_image_mode=False,
             model_complexity=model_complexity,
             smooth_landmarks=smooth_landmarks,
-            min_detection_confidence=conf_threshold,
-            min_tracking_confidence=conf_threshold,
+            min_detection_confidence=min_detection_confidence,
+            min_tracking_confidence=min_tracking_confidence,
         )
 
     def detect(self, frame: np.ndarray) -> List[Pose]:
@@ -67,7 +69,7 @@ class MediaPipePoseEstimator:
             )
 
         visible = [
-            (kp.x, kp.y) for kp in keypoints if kp.confidence > self.conf_threshold
+            (kp.x, kp.y) for kp in keypoints if kp.confidence > self.kp_conf_threshold
         ]
         if visible:
             xs = [p[0] for p in visible]
