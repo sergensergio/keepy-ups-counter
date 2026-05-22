@@ -1,14 +1,21 @@
 import time
-from typing import Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 import cv2
 import numpy as np
 
 from .ball_detector import BallDetector
-from .pose_estimator import PoseEstimator
+from .ball_tracker import BallTracker
+from .mediapipe_pose_estimator import MediaPipePoseEstimator as PoseEstimator
+from .signal_visualizer import ScrollingSignalVisualizer, SignalSpec
 from .types import FrameDetections
 from .video_reader import VideoReader
 from .visualizer import Visualizer
+
+# BlazePose foot-index landmarks (the toes).
+_LEFT_TOE_IDX = 31
+_RIGHT_TOE_IDX = 32
+_TOE_CONF_THRESHOLD = 0.3
 
 
 class KeepyUpsPipeline:
@@ -24,33 +31,130 @@ class KeepyUpsPipeline:
         ball_detector: BallDetector,
         pose_estimator: PoseEstimator,
         visualizer: Visualizer,
+        ball_tracker: Optional[BallTracker] = None,
     ):
         self.ball_detector = ball_detector
         self.pose_estimator = pose_estimator
         self.visualizer = visualizer
+        self.ball_tracker = ball_tracker
 
-    def process_frame(self, frame: np.ndarray) -> Tuple[np.ndarray, FrameDetections]:
+    def process_frame(
+        self, frame: np.ndarray, frame_idx: int = 0
+    ) -> Tuple[np.ndarray, FrameDetections]:
         balls = self.ball_detector.detect(frame)
         poses = self.pose_estimator.detect(frame)
-        annotated = self.visualizer.draw(frame.copy(), balls, poses)
-        return annotated, FrameDetections(balls=balls, poses=poses)
+        predictions = []
+        if self.ball_tracker:
+            balls, predictions = self.ball_tracker.detect(balls)
+        annotated = self.visualizer.draw(
+            frame.copy(), balls, poses, ball_predictions=predictions
+        )
+        if self.ball_tracker is not None:
+            self.visualizer.draw_hud(
+                annotated,
+                self._build_hud_lines(frame_idx, balls, predictions),
+            )
+        return annotated, FrameDetections(
+            balls=balls, poses=poses, ball_predictions=list(predictions)
+        )
+
+    def _build_hud_lines(
+        self,
+        frame_idx: int,
+        balls,
+        predictions,
+    ):
+        """Diagnostic lines drawn in the upper-left of the output frame.
+
+        Reports global tracker state (frame number, fps, gravity estimate) and
+        per-track Kalman info: for the largest detected ball this frame plus
+        its YOLO centroid, or — when no detection exists — for the freshest
+        active track (lowest `misses`) so the operator can still follow the
+        motion-model trajectory during occlusions.
+        """
+        tracker = self.ball_tracker
+        assert tracker is not None  # caller checks
+        lines = [
+            f"frame {frame_idx}    fps {tracker._fps:.0f}",
+            f"g {tracker.gravity:.0f} px/s^2",
+        ]
+        preds_by_id = {pid: (px, py) for pid, px, py in predictions}
+        states_by_id = {
+            sid: (sx, sy, svx, svy, miss)
+            for sid, sx, sy, svx, svy, miss in tracker.track_states
+        }
+
+        if balls:
+            largest = max(balls, key=lambda b: (b.x2 - b.x1) * (b.y2 - b.y1))
+            diameter = max(largest.x2 - largest.x1, largest.y2 - largest.y1)
+            cx, cy = largest.center
+            tid = largest.track_id
+            tid_str = f"track#{tid}" if tid is not None else "track#-"
+            lines.append(
+                f"det {tid_str} conf {largest.confidence:.2f} d {diameter:.0f}px"
+            )
+            lines.append(f"det pos  ({cx:7.1f}, {cy:7.1f})")
+            self._append_kalman_lines(lines, tid, preds_by_id, states_by_id)
+            return lines
+
+        # No detection — fall back to the freshest active track (smallest
+        # `misses`, tie-broken by lowest track_id).
+        if states_by_id:
+            tid = min(states_by_id, key=lambda t: (states_by_id[t][4], t))
+            miss = states_by_id[tid][4]
+            lines.append(f"no det — track#{tid} (missed {miss}f)")
+            self._append_kalman_lines(lines, tid, preds_by_id, states_by_id)
+        else:
+            lines.append("no ball detection")
+        return lines
+
+    @staticmethod
+    def _append_kalman_lines(lines, tid, preds_by_id, states_by_id) -> None:
+        if tid is None:
+            return
+        if tid in preds_by_id:
+            px, py = preds_by_id[tid]
+            lines.append(f"kpred    ({px:7.1f}, {py:7.1f})")
+        if tid in states_by_id:
+            sx, sy, svx, svy, _ = states_by_id[tid]
+            lines.append(f"kcorr    ({sx:7.1f}, {sy:7.1f})")
+            lines.append(f"kvel     ({svx:7.1f}, {svy:7.1f}) px/s")
 
     def run(
         self,
         video_path: str,
         output_path: Optional[str] = None,
+        signal_panel_width: Optional[int] = None,
         display: bool = False,
         log_every: int = 30,
     ) -> None:
+        """Process the video. When writing or displaying, the signal panel
+        is hconcat'd to the right of the annotated frame at matching height.
+
+        `signal_panel_width` controls the panel width in pixels; defaults
+        to the input video's width (1:1 split, easy to read on portrait
+        sources).
+        """
         with VideoReader(video_path) as reader:
+            if self.ball_tracker:
+                self.ball_tracker.set_fps(reader.fps)
+
+            panel_w = signal_panel_width or reader.width
+            signal_visualizer: Optional[ScrollingSignalVisualizer] = None
+            if output_path or display:
+                signal_visualizer = self._make_signal_visualizer(
+                    panel_w, reader.height, reader.width
+                )
+
             writer: Optional[cv2.VideoWriter] = None
             if output_path:
                 fourcc = cv2.VideoWriter_fourcc(*"avc1")
+                out_w = reader.width + (panel_w if signal_visualizer else 0)
                 writer = cv2.VideoWriter(
                     output_path,
                     fourcc,
-                    30,
-                    (reader.width, reader.height),
+                    reader.fps,
+                    (out_w, reader.height),
                 )
                 if not writer.isOpened():
                     raise IOError(f"Cannot open output video: {output_path}")
@@ -58,13 +162,19 @@ class KeepyUpsPipeline:
             try:
                 t0 = time.time()
                 for idx, frame in enumerate(reader):
-                    annotated, _ = self.process_frame(frame)
+                    annotated, det = self.process_frame(frame, frame_idx=idx)
+
+                    if signal_visualizer is not None:
+                        signal_visualizer.push(self._collect_signal_samples(det))
+                        composed = np.hstack([annotated, signal_visualizer.render()])
+                    else:
+                        composed = annotated
 
                     if writer is not None:
-                        writer.write(annotated)
+                        writer.write(composed)
 
                     if display:
-                        cv2.imshow("keepy-ups", annotated)
+                        cv2.imshow("keepy-ups", composed)
                         if cv2.waitKey(1) & 0xFF == ord("q"):
                             break
 
@@ -77,3 +187,73 @@ class KeepyUpsPipeline:
                     writer.release()
                 if display:
                     cv2.destroyAllWindows()
+
+    def _make_signal_visualizer(
+        self, panel_w: int, panel_h: int, source_frame_w: int
+    ) -> ScrollingSignalVisualizer:
+        """8-channel monitor: Kalman (x, y, vx, vy) + L/R toe (x, y).
+
+        Pixel-coord signals are pinned to the source frame's extents so they
+        read consistently across the video; velocities auto-scale because
+        their range depends on motion intensity. `panel_w` / `panel_h` are
+        the render dimensions of the panel itself (panel_h matches the
+        source frame height so it can be hconcat'd to the annotated frame).
+        """
+        signals = [
+            SignalSpec("kx", "ball x", (80, 255, 80),
+                       y_range=(0.0, float(source_frame_w)), unit="px"),
+            SignalSpec("ky", "ball y", (80, 255, 80),
+                       y_range=(0.0, float(panel_h)), unit="px"),
+            SignalSpec("kvx", "ball vx", (80, 220, 255), unit="px/s"),
+            SignalSpec("kvy", "ball vy", (80, 220, 255), unit="px/s"),
+            SignalSpec("lx", "L toe x", (255, 200, 80),
+                       y_range=(0.0, float(source_frame_w)), unit="px"),
+            SignalSpec("ly", "L toe y", (255, 200, 80),
+                       y_range=(0.0, float(panel_h)), unit="px"),
+            SignalSpec("rx", "R toe x", (220, 120, 255),
+                       y_range=(0.0, float(source_frame_w)), unit="px"),
+            SignalSpec("ry", "R toe y", (220, 120, 255),
+                       y_range=(0.0, float(panel_h)), unit="px"),
+        ]
+        return ScrollingSignalVisualizer(
+            width=panel_w,
+            height=panel_h,
+            signals=signals,
+            window_size=240,
+        )
+
+    def _collect_signal_samples(
+        self, det: FrameDetections
+    ) -> Dict[str, Optional[float]]:
+        """Extract one sample per channel for the current frame.
+
+        Ball channels come from the freshest active Kalman track (lowest
+        `misses`, tie-broken by lowest track_id) so the trace stays
+        continuous through brief occlusions. Toe channels come from the
+        first pose's foot-index landmarks; gated by visibility so dropouts
+        render as gaps rather than misleading straight lines.
+        """
+        samples: Dict[str, Optional[float]] = {
+            "kx": None, "ky": None, "kvx": None, "kvy": None,
+            "lx": None, "ly": None, "rx": None, "ry": None,
+        }
+        if self.ball_tracker is not None:
+            states = self.ball_tracker.track_states
+            if states:
+                best = min(states, key=lambda s: (s[5], s[0]))
+                samples["kx"] = best[1]
+                samples["ky"] = best[2]
+                samples["kvx"] = best[3]
+                samples["kvy"] = best[4]
+        if det.poses:
+            kps = det.poses[0].keypoints
+            if len(kps) > _RIGHT_TOE_IDX:
+                lt = kps[_LEFT_TOE_IDX]
+                rt = kps[_RIGHT_TOE_IDX]
+                if lt.confidence >= _TOE_CONF_THRESHOLD:
+                    samples["lx"] = lt.x
+                    samples["ly"] = lt.y
+                if rt.confidence >= _TOE_CONF_THRESHOLD:
+                    samples["rx"] = rt.x
+                    samples["ry"] = rt.y
+        return samples

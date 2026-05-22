@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 
 @dataclass
@@ -44,3 +44,6 @@ class Pose:
 class FrameDetections:
     balls: List[BoundingBox] = field(default_factory=list)
     poses: List[Pose] = field(default_factory=list)
+    # `(track_id, x, y)` Kalman-predicted centroids; empty when the ball
+    # component isn't a tracker.
+    ball_predictions: List[Tuple[int, float, float]] = field(default_factory=list)
