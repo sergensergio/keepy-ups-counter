@@ -8,7 +8,6 @@ Run this once after installing requirements:
 
 Produces (per requested arch):
     models/<arch>n.onnx       (general COCO detector; we use class 32 = sports ball)
-    models/<arch>n-pose.onnx  (single-class person + 17 COCO keypoints)
 
 Inference itself does NOT depend on ultralytics; only onnxruntime + opencv + numpy.
 """
@@ -59,7 +58,6 @@ def main(archs: Iterable[str] = ("yolo11",), imgsz: int = 640) -> None:
                 f"Unsupported arch '{arch}'. Choose from {SUPPORTED_ARCHS}."
             )
         export(f"{arch}n", imgsz=imgsz)
-        export(f"{arch}n-pose", imgsz=imgsz)
 
 
 if __name__ == "__main__":

@@ -2,7 +2,6 @@
 
 Wraps Ultralytics' training API with this project's conventions:
 
-  * The base-model name implies the task (`*-pose.pt` -> pose, otherwise detect).
   * Training metrics are pulled into a typed `TrainingKpis` dataclass.
   * Best weights are exported to ONNX matching the inference preprocessor
     (`imgsz`, `opset`).
@@ -61,12 +60,7 @@ class TrainingKpis:
 
 
 class YoloTrainer:
-    """Fine-tunes a YOLO model on a custom dataset and exports to ONNX.
-
-    Detection (`yolo11n.pt`, `yolo26n.pt`, ...) and pose
-    (`yolo11n-pose.pt`, `yolo26n-pose.pt`, ...) checkpoints are both
-    supported — the task is inferred from the base-model filename.
-    """
+    """Fine-tunes a YOLO model on a custom dataset and exports to ONNX."""
 
     def __init__(
         self,
@@ -102,7 +96,7 @@ class YoloTrainer:
 
     @property
     def task(self) -> str:
-        return "pose" if "pose" in Path(self.base_model).stem.lower() else "detect"
+        return "detect"
 
     def run(self) -> TrainingKpis:
         from ultralytics import YOLO  # lazy: keeps inference deps slim
@@ -177,11 +171,10 @@ class YoloTrainer:
     def _extract_metrics(results_obj: Any) -> Dict[str, float]:
         """Pull the main KPIs from an Ultralytics validation results object.
 
-        Detection results expose only the `box` block; pose results expose
-        both `box` (person bbox) and `pose` (keypoint AP).
+        Detection results expose only the `box` block.
         """
         out: Dict[str, float] = {}
-        for prefix in ("box", "pose"):
+        for prefix in ("box"):
             block = getattr(results_obj, prefix, None)
             if block is None:
                 continue

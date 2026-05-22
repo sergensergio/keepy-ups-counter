@@ -1,13 +1,9 @@
-"""YOLOv8 / YOLO11 ONNX postprocessors.
+"""YOLOv8 / YOLO11 ONNX postprocessor.
 
 Detection output:  (1, 4 + num_classes, num_anchors) -> transposed -> (N, 4+C).
                    Per-row layout: [cx, cy, w, h, score_0, ..., score_{C-1}].
                    Requires argmax over class scores and post-hoc NMS.
 
-Pose output:       (1, 56, num_anchors) -> transposed -> (N, 56).
-                   Per-row layout: [cx, cy, w, h, person_conf,
-                                    kp0_x, kp0_y, kp0_v, ..., kp16_x, kp16_y, kp16_v].
-                   Single class (person). Requires post-hoc NMS.
 """
 
 from typing import List, Optional
@@ -16,8 +12,8 @@ import cv2
 import numpy as np
 
 from ..preprocessor import LetterboxInfo, YoloPreprocessor
-from ..types import BoundingBox, Keypoint, Pose
-from .base import DetectionPostprocessor, PosePostprocessor
+from ..types import BoundingBox
+from .base import DetectionPostprocessor
 
 
 def _nms_keep(
@@ -86,63 +82,6 @@ class Yolo11DetectionPostprocessor(DetectionPostprocessor):
                     y2=y2m,
                     confidence=float(confidences[i]),
                     class_id=int(class_ids[i]),
-                )
-            )
-        return results
-
-
-class Yolo11PosePostprocessor(PosePostprocessor):
-    NUM_KEYPOINTS = 17
-
-    def parse(
-        self,
-        raw_outputs: List[np.ndarray],
-        info: LetterboxInfo,
-        preprocessor: YoloPreprocessor,
-        conf_threshold: float,
-        iou_threshold: float,
-    ) -> List[Pose]:
-        preds = raw_outputs[0][0].T  # (N, 56)
-        boxes_xywh = preds[:, :4]
-        confidences = preds[:, 4]
-        keypoints = preds[:, 5:].reshape(-1, self.NUM_KEYPOINTS, 3)
-
-        mask = confidences > conf_threshold
-        if not np.any(mask):
-            return []
-
-        boxes_xywh = boxes_xywh[mask]
-        confidences = confidences[mask]
-        keypoints = keypoints[mask]
-
-        cx, cy, w, h = boxes_xywh.T
-        x1 = cx - w / 2.0
-        y1 = cy - h / 2.0
-
-        keep_idx = _nms_keep(x1, y1, w, h, confidences, conf_threshold, iou_threshold)
-        if keep_idx.size == 0:
-            return []
-
-        results: List[Pose] = []
-        for i in keep_idx:
-            x1m, y1m, x2m, y2m = preprocessor.reverse_box(
-                (x1[i], y1[i], x1[i] + w[i], y1[i] + h[i]), info
-            )
-            kp_list: List[Keypoint] = []
-            for j in range(self.NUM_KEYPOINTS):
-                kx, ky, kc = keypoints[i, j]
-                kxm, kym = preprocessor.reverse_point((kx, ky), info)
-                kp_list.append(Keypoint(x=kxm, y=kym, confidence=float(kc)))
-            results.append(
-                Pose(
-                    keypoints=kp_list,
-                    bbox=BoundingBox(
-                        x1=x1m,
-                        y1=y1m,
-                        x2=x2m,
-                        y2=y2m,
-                        confidence=float(confidences[i]),
-                    ),
                 )
             )
         return results

@@ -3,10 +3,6 @@
 Example (detection):
     python train.py --base-model yolo11n.pt --data datasets/ball/data.yaml \
         --epochs 50 --imgsz 640 --batch 16 --device 0
-
-Example (pose):
-    python train.py --base-model yolo11n-pose.pt --data datasets/pose/data.yaml \
-        --epochs 80 --imgsz 640 --device 0
 """
 
 from __future__ import annotations
@@ -23,8 +19,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--base-model",
         default="yolo11n.pt",
-        help="Starting checkpoint (e.g. yolo11n.pt, yolo11n-pose.pt, yolo26n.pt). "
-        "The task (detect vs pose) is inferred from the filename.",
+        help="Starting checkpoint (e.g. yolo11n.pt, yolo26n.pt).",
     )
     p.add_argument(
         "--data",
