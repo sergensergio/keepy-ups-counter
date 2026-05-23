@@ -82,32 +82,33 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--max-distance",
         type=float,
-        default=120.0,
-        help="Tracker: max Euclidean distance (pixels) between a detection centroid "
-        "and a track's Kalman-predicted centroid for them to be associated.",
+        default=0.6,
+        help="Tracker: max distance in metres between a detection centroid and a "
+        "track's association anchor (last detection or Kalman prediction). "
+        "Independent of camera distance — matching runs in metric space.",
     )
     p.add_argument(
-        "--gravity",
+        "--init-px-per-m",
         type=float,
-        default=1800.0,
-        help="Tracker: initial gravitational acceleration prior in pixels/s^2 "
-        "(positive = downward in image coords). Auto-refined from ball-size "
-        "observations when --ball-diameter-m is set.",
+        default=200.0,
+        help="Tracker: initial pixels-per-metre scale, used before the first "
+        "high-confidence detection refines it. Gravity is constant 9.81 m/s² in "
+        "metric space; this scale is the only thing depending on camera distance.",
     )
     p.add_argument(
         "--ball-diameter-m",
         type=float,
         default=0.22,
         help="Tracker: real-world ball diameter in metres, used to estimate "
-        "px-per-metre from high-confidence detections and rescale gravity to "
-        "9.81 m/s² · px/m. Set to 0 to disable auto-estimation.",
+        "pixels-per-metre from high-confidence detections (diameter_px / "
+        "ball_diameter_m). Set to 0 to disable auto-estimation.",
     )
     p.add_argument(
-        "--gravity-estimation-conf",
+        "--scale-estimation-conf",
         type=float,
         default=0.9,
-        help="Tracker: min detection confidence used as a sample for gravity "
-        "auto-estimation (avoids learning from noisy low-conf bboxes).",
+        help="Tracker: min detection confidence used as a sample for pixels-per-"
+        "metre auto-estimation (avoids learning from noisy low-conf bboxes).",
     )
     p.add_argument(
         "--display",
@@ -145,9 +146,9 @@ def main() -> None:
             track_activation_threshold=args.track_activation_threshold,
             lost_track_buffer=args.lost_track_buffer,
             max_distance=args.max_distance,
-            gravity=args.gravity,
+            px_per_m=args.init_px_per_m,
             ball_diameter_m=args.ball_diameter_m,
-            gravity_estimation_conf=args.gravity_estimation_conf,
+            scale_estimation_conf=args.scale_estimation_conf,
         )
 
     visualizer = Visualizer()

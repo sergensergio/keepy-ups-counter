@@ -66,21 +66,24 @@ class KeepyUpsPipeline:
     ):
         """Diagnostic lines drawn in the upper-left of the output frame.
 
-        Reports global tracker state (frame number, fps, gravity estimate) and
-        per-track Kalman info: for the largest detected ball this frame plus
-        its YOLO centroid, or — when no detection exists — for the freshest
-        active track (lowest `misses`) so the operator can still follow the
-        motion-model trajectory during occlusions.
+        Reports global tracker state (frame number, fps, px-per-metre scale)
+        and per-track Kalman info: for the largest detected ball this frame
+        plus its YOLO centroid, or — when no detection exists — for the
+        freshest active track (lowest `misses`) so the operator can still
+        follow the motion-model trajectory during occlusions.
         """
         tracker = self.ball_tracker
         assert tracker is not None  # caller checks
+        px_per_m = tracker.px_per_m
         lines = [
             f"frame {frame_idx}    fps {tracker._fps:.0f}",
-            f"g {tracker.gravity:.0f} px/s^2",
+            f"px/m {px_per_m:.0f}",
         ]
         preds_by_id = {pid: (px, py) for pid, px, py in predictions}
+        # Tracker emits state in metres; HUD shows positions in pixels (so
+        # they line up with the frame) and velocities in m/s.
         states_by_id = {
-            sid: (sx, sy, svx, svy, miss)
+            sid: (sx * px_per_m, sy * px_per_m, svx, svy, miss)
             for sid, sx, sy, svx, svy, miss in tracker.track_states
         }
 
@@ -118,7 +121,7 @@ class KeepyUpsPipeline:
         if tid in states_by_id:
             sx, sy, svx, svy, _ = states_by_id[tid]
             lines.append(f"kcorr    ({sx:7.1f}, {sy:7.1f})")
-            lines.append(f"kvel     ({svx:7.1f}, {svy:7.1f}) px/s")
+            lines.append(f"kvel     ({svx:6.2f}, {svy:6.2f}) m/s")
 
     def run(
         self,
@@ -193,19 +196,18 @@ class KeepyUpsPipeline:
     ) -> ScrollingSignalVisualizer:
         """8-channel monitor: Kalman (x, y, vx, vy) + L/R toe (x, y).
 
-        Pixel-coord signals are pinned to the source frame's extents so they
-        read consistently across the video; velocities auto-scale because
-        their range depends on motion intensity. `panel_w` / `panel_h` are
-        the render dimensions of the panel itself (panel_h matches the
-        source frame height so it can be hconcat'd to the annotated frame).
+        Position channels are displayed in pixels (pinned to the source
+        frame's extents so they read consistently across the video — the
+        tracker's metric state is converted in `_collect_signal_samples`).
+        Velocity channels are in m/s and auto-scale.
         """
         signals = [
             SignalSpec("kx", "ball x", (80, 255, 80),
                        y_range=(0.0, float(source_frame_w)), unit="px"),
             SignalSpec("ky", "ball y", (80, 255, 80),
                        y_range=(0.0, float(panel_h)), unit="px"),
-            SignalSpec("kvx", "ball vx", (80, 220, 255), unit="px/s"),
-            SignalSpec("kvy", "ball vy", (80, 220, 255), unit="px/s"),
+            SignalSpec("kvx", "ball vx", (80, 220, 255), unit="m/s"),
+            SignalSpec("kvy", "ball vy", (80, 220, 255), unit="m/s"),
             SignalSpec("lx", "L toe x", (255, 200, 80),
                        y_range=(0.0, float(source_frame_w)), unit="px"),
             SignalSpec("ly", "L toe y", (255, 200, 80),
@@ -241,8 +243,12 @@ class KeepyUpsPipeline:
             states = self.ball_tracker.track_states
             if states:
                 best = min(states, key=lambda s: (s[5], s[0]))
-                samples["kx"] = best[1]
-                samples["ky"] = best[2]
+                px_per_m = self.ball_tracker.px_per_m
+                # Tracker emits state in metres; convert position to pixels
+                # so it aligns with the frame extents pinned on the panel.
+                # Velocity stays in m/s.
+                samples["kx"] = best[1] * px_per_m
+                samples["ky"] = best[2] * px_per_m
                 samples["kvx"] = best[3]
                 samples["kvy"] = best[4]
         if det.poses:
