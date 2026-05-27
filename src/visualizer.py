@@ -1,4 +1,4 @@
-from typing import Iterable, List, Sequence, Tuple
+from typing import Iterable, List, Optional, Sequence, Tuple
 
 import cv2
 import numpy as np
@@ -108,8 +108,14 @@ class Visualizer:
                 frame, (int(kp.x), int(kp.y)), 3, self.keypoint_color, -1, cv2.LINE_AA
             )
 
-    def draw_hud(self, frame: np.ndarray, lines: Sequence[str]) -> None:
-        """Render text lines in the upper-left corner with a translucent backdrop."""
+    def draw_hud(
+        self, frame: np.ndarray, lines: Sequence[str], y0: int = 10
+    ) -> None:
+        """Render text lines in the upper-left corner with a translucent backdrop.
+
+        `y0` lets callers stack the HUD below other overlays (e.g. the
+        keepy-ups counter); defaults to 10 to keep stand-alone use unchanged.
+        """
         if not lines:
             return
         font = cv2.FONT_HERSHEY_SIMPLEX
@@ -117,7 +123,7 @@ class Visualizer:
         thickness = 1
         pad = 6
         line_gap = 4
-        x0, y0 = 10, 10
+        x0 = 10
 
         sizes = [cv2.getTextSize(s, font, scale, thickness)[0] for s in lines]
         max_w = max(w for w, _ in sizes)
@@ -141,6 +147,68 @@ class Visualizer:
                 thickness,
                 cv2.LINE_AA,
             )
+
+    def draw_counter(
+        self,
+        frame: np.ndarray,
+        count: int,
+        last_contact_part: Optional[str] = None,
+    ) -> int:
+        """Render a prominent keepy-ups counter in the upper-left.
+
+        Returns the y-pixel just below the counter overlay so other
+        overlays (e.g. the diagnostic HUD) can stack underneath without
+        overlap.
+        """
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        count_text = str(count)
+        label_text = "keepy-ups"
+        if last_contact_part is not None:
+            label_text = f"keepy-ups - {last_contact_part}"
+
+        count_scale = 1.6
+        count_thickness = 3
+        label_scale = 0.5
+        label_thickness = 1
+        pad = 10
+        gap = 6
+        x0, y0 = 10, 10
+
+        (cw, ch), _ = cv2.getTextSize(
+            count_text, font, count_scale, count_thickness
+        )
+        (lw, lh), _ = cv2.getTextSize(
+            label_text, font, label_scale, label_thickness
+        )
+
+        box_w = max(cw, lw) + 2 * pad
+        box_h = ch + gap + lh + 2 * pad
+
+        overlay = frame.copy()
+        cv2.rectangle(overlay, (x0, y0), (x0 + box_w, y0 + box_h), (0, 0, 0), -1)
+        cv2.addWeighted(overlay, 0.6, frame, 0.4, 0, frame)
+
+        cv2.putText(
+            frame,
+            count_text,
+            (x0 + pad, y0 + pad + ch),
+            font,
+            count_scale,
+            (255, 255, 255),
+            count_thickness,
+            cv2.LINE_AA,
+        )
+        cv2.putText(
+            frame,
+            label_text,
+            (x0 + pad, y0 + pad + ch + gap + lh),
+            font,
+            label_scale,
+            (200, 200, 200),
+            label_thickness,
+            cv2.LINE_AA,
+        )
+        return y0 + box_h + 8
 
     def draw_prediction(
         self, frame: np.ndarray, track_id: int, x: float, y: float
