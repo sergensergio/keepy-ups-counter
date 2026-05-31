@@ -139,7 +139,7 @@ class KeepyUpsPipeline:
             lines.append(
                 f"det {tid_str} conf {largest.confidence:.2f} d {diameter:.0f}px"
             )
-            lines.append(f"det pos  ({cx:7.1f}, {cy:7.1f})")
+            lines.append(("det pos", f"({cx:7.1f}, {cy:7.1f})"))
             self._append_kalman_lines(lines, tid, preds_by_id, states_by_id)
             return lines
 
@@ -160,11 +160,11 @@ class KeepyUpsPipeline:
             return
         if tid in preds_by_id:
             px, py = preds_by_id[tid]
-            lines.append(f"kpred    ({px:7.1f}, {py:7.1f})")
+            lines.append(("kpred", f"({px:7.1f}, {py:7.1f})"))
         if tid in states_by_id:
             sx, sy, svx, svy, _ = states_by_id[tid]
-            lines.append(f"kcorr    ({sx:7.1f}, {sy:7.1f})")
-            lines.append(f"kvel     ({svx:6.2f}, {svy:6.2f}) m/s")
+            lines.append(("kcorr", f"({sx:7.1f}, {sy:7.1f})"))
+            lines.append(("kvel", f"({svx:6.2f}, {svy:6.2f}) m/s"))
 
     def run(
         self,

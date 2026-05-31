@@ -1,4 +1,4 @@
-from typing import Iterable, List, Optional, Sequence, Tuple
+from typing import Iterable, List, Optional, Sequence, Tuple, Union
 
 import cv2
 import numpy as np
@@ -109,9 +109,18 @@ class Visualizer:
             )
 
     def draw_hud(
-        self, frame: np.ndarray, lines: Sequence[str], y0: int = 10
+        self,
+        frame: np.ndarray,
+        lines: Sequence[Union[str, Tuple[str, str]]],
+        y0: int = 10,
     ) -> None:
         """Render text lines in the upper-left corner with a translucent backdrop.
+
+        Each entry is either a plain string or a `(label, value)` tuple. Tuple
+        entries are rendered in two columns: labels left-aligned, values aligned
+        to a shared column so symbols like `(` line up across rows (the HUD
+        font is proportional, so space-padding inside a single string cannot
+        achieve this).
 
         `y0` lets callers stack the HUD below other overlays (e.g. the
         keepy-ups counter); defaults to 10 to keep stand-alone use unchanged.
@@ -119,27 +128,44 @@ class Visualizer:
         if not lines:
             return
         font = cv2.FONT_HERSHEY_SIMPLEX
-        scale = 0.5
+        scale = 1
         thickness = 1
         pad = 6
-        line_gap = 4
+        line_gap = 10
+        col_gap = 8
         x0 = 10
 
-        sizes = [cv2.getTextSize(s, font, scale, thickness)[0] for s in lines]
-        max_w = max(w for w, _ in sizes)
-        line_h = max(h for _, h in sizes)
+        norm: List[Tuple[str, Optional[str]]] = [
+            item if isinstance(item, tuple) else (item, None) for item in lines
+        ]
+        label_sizes = [
+            cv2.getTextSize(lbl, font, scale, thickness)[0] for lbl, _ in norm
+        ]
+        value_sizes = [
+            cv2.getTextSize(val, font, scale, thickness)[0] if val is not None else (0, 0)
+            for _, val in norm
+        ]
+        tuple_label_ws = [lw for (lw, _), (_, v) in zip(label_sizes, norm) if v is not None]
+        label_col_w = max(tuple_label_ws) if tuple_label_ws else 0
+
+        row_widths = [
+            lw if v is None else label_col_w + col_gap + vw
+            for (lw, _), (vw, _), (_, v) in zip(label_sizes, value_sizes, norm)
+        ]
+        max_w = max(row_widths)
+        line_h = max(h for _, h in label_sizes)
         box_w = max_w + 2 * pad
-        box_h = (line_h + line_gap) * len(lines) - line_gap + 2 * pad
+        box_h = (line_h + line_gap) * len(norm) - line_gap + 2 * pad
 
         overlay = frame.copy()
         cv2.rectangle(overlay, (x0, y0), (x0 + box_w, y0 + box_h), (0, 0, 0), -1)
         cv2.addWeighted(overlay, 0.55, frame, 0.45, 0, frame)
 
-        for i, text in enumerate(lines):
+        for i, (lbl, val) in enumerate(norm):
             ty = y0 + pad + (i + 1) * line_h + i * line_gap
             cv2.putText(
                 frame,
-                text,
+                lbl,
                 (x0 + pad, ty),
                 font,
                 scale,
@@ -147,6 +173,17 @@ class Visualizer:
                 thickness,
                 cv2.LINE_AA,
             )
+            if val is not None:
+                cv2.putText(
+                    frame,
+                    val,
+                    (x0 + pad + label_col_w + col_gap, ty),
+                    font,
+                    scale,
+                    (255, 255, 255),
+                    thickness,
+                    cv2.LINE_AA,
+                )
 
     def draw_counter(
         self,
@@ -166,9 +203,9 @@ class Visualizer:
         if last_contact_part is not None:
             label_text = f"keepy-ups - {last_contact_part}"
 
-        count_scale = 1.6
+        count_scale = 2
         count_thickness = 3
-        label_scale = 0.5
+        label_scale = 1
         label_thickness = 1
         pad = 10
         gap = 6
