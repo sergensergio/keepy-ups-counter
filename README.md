@@ -3,6 +3,8 @@
 Detects a football and the player's pose in a keepy-ups video, then renders an
 annotated output with a live signal panel.
 
+![demo](docs/demo.gif)
+
 ## How it works
 
 The pipeline runs per frame ([src/pipeline.py](src/pipeline.py)):
