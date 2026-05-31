@@ -4,9 +4,11 @@
 import argparse
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
 from src.ball_detector import BallDetector
 from src.ball_tracker import BallTracker
+from src.keepy_ups_counter import KeepyUpsCounter
 from src.mediapipe_pose_estimator import MediaPipePoseEstimator
 from src.pipeline import KeepyUpsPipeline
 from src.postprocessors import (
@@ -111,6 +113,19 @@ def parse_args() -> argparse.Namespace:
         "metre auto-estimation (avoids learning from noisy low-conf bboxes).",
     )
     p.add_argument(
+        "--no-counter",
+        action="store_true",
+        help="Disable the keepy-ups counter overlay (counter requires the tracker).",
+    )
+    p.add_argument(
+        "--contact-distance-m",
+        type=float,
+        default=0.3,
+        help="Counter: max distance in metres between the ball centroid and a valid "
+        "body-part keypoint (head/shoulders/knees/feet) at the moment of a vy "
+        "reversal for the flick to count. Arms are excluded.",
+    )
+    p.add_argument(
         "--display",
         action="store_true",
         help="Show annotated frames in a window (press q to quit)",
@@ -151,13 +166,18 @@ def main() -> None:
             scale_estimation_conf=args.scale_estimation_conf,
         )
 
+    counter: Optional[KeepyUpsCounter] = None
+    if ball_tracker is not None and not args.no_counter:
+        counter = KeepyUpsCounter(contact_distance_m=args.contact_distance_m)
+
     visualizer = Visualizer()
 
     pipeline = KeepyUpsPipeline(
         ball_detector,
         pose_estimator,
         visualizer,
-        ball_tracker
+        ball_tracker,
+        counter=counter,
     )
 
     output_path = None

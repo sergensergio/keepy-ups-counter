@@ -6,6 +6,7 @@ import numpy as np
 
 from .ball_detector import BallDetector
 from .ball_tracker import BallTracker
+from .keepy_ups_counter import KeepyUpsCounter
 from .mediapipe_pose_estimator import MediaPipePoseEstimator as PoseEstimator
 from .signal_visualizer import ScrollingSignalVisualizer, SignalSpec
 from .types import FrameDetections
@@ -20,10 +21,7 @@ _TOE_CONF_THRESHOLD = 0.3
 
 class KeepyUpsPipeline:
     """Orchestrates the per-frame pipeline:
-       read -> ball detect -> pose detect -> visualize -> write/display.
-
-    Counting logic is intentionally out of scope for v1; this pipeline only
-    surfaces the structured detections needed by a future counter component.
+       read -> ball detect -> pose detect -> track -> count -> visualize.
     """
 
     def __init__(
@@ -32,11 +30,15 @@ class KeepyUpsPipeline:
         pose_estimator: PoseEstimator,
         visualizer: Visualizer,
         ball_tracker: Optional[BallTracker] = None,
+        counter: Optional[KeepyUpsCounter] = None,
     ):
         self.ball_detector = ball_detector
         self.pose_estimator = pose_estimator
         self.visualizer = visualizer
         self.ball_tracker = ball_tracker
+        # The counter needs the tracker's metric velocity to detect flicks,
+        # so it's silently ignored when no tracker is configured.
+        self.counter = counter if ball_tracker is not None else None
 
     def process_frame(
         self, frame: np.ndarray, frame_idx: int = 0
@@ -46,17 +48,54 @@ class KeepyUpsPipeline:
         predictions = []
         if self.ball_tracker:
             balls, predictions = self.ball_tracker.detect(balls)
+        if self.counter is not None:
+            self._step_counter(poses)
         annotated = self.visualizer.draw(
             frame.copy(), balls, poses, ball_predictions=predictions
         )
+        hud_y0 = 10
+        if self.counter is not None:
+            hud_y0 = self.visualizer.draw_counter(
+                annotated, self.counter.count, self.counter.last_contact_part
+            )
         if self.ball_tracker is not None:
             self.visualizer.draw_hud(
                 annotated,
                 self._build_hud_lines(frame_idx, balls, predictions),
+                y0=hud_y0,
             )
         return annotated, FrameDetections(
             balls=balls, poses=poses, ball_predictions=list(predictions)
         )
+
+    def _step_counter(self, poses) -> None:
+        """Feed the counter the freshest metric ball state for this frame."""
+        assert self.counter is not None and self.ball_tracker is not None
+        state = self._freshest_track_state_m()
+        if state is None:
+            self.counter.update(None, None, poses, self.ball_tracker.px_per_m)
+            return
+        x_m, y_m, _vx, vy = state
+        self.counter.update(
+            (x_m, y_m), vy, poses, self.ball_tracker.px_per_m
+        )
+
+    def _freshest_track_state_m(
+        self,
+    ) -> Optional[Tuple[float, float, float, float]]:
+        """`(x_m, y_m, vx_m_s, vy_m_s)` of the freshest active track, or `None`.
+
+        "Freshest" = lowest `misses`, ties broken by lowest `track_id`. The
+        same selection is used for the signal panel so the displayed Kalman
+        trace and the counter agree on which track represents "the ball".
+        """
+        if self.ball_tracker is None:
+            return None
+        states = self.ball_tracker.track_states
+        if not states:
+            return None
+        best = min(states, key=lambda s: (s[5], s[0]))
+        return best[1], best[2], best[3], best[4]
 
     def _build_hud_lines(
         self,
@@ -79,6 +118,10 @@ class KeepyUpsPipeline:
             f"frame {frame_idx}    fps {tracker._fps:.0f}",
             f"px/m {px_per_m:.0f}",
         ]
+        if self.counter is not None:
+            lines.append(
+                f"phase {self.counter.phase.name}  cd {self.counter.cooldown}"
+            )
         preds_by_id = {pid: (px, py) for pid, px, py in predictions}
         # Tracker emits state in metres; HUD shows positions in pixels (so
         # they line up with the frame) and velocities in m/s.
@@ -96,7 +139,7 @@ class KeepyUpsPipeline:
             lines.append(
                 f"det {tid_str} conf {largest.confidence:.2f} d {diameter:.0f}px"
             )
-            lines.append(f"det pos  ({cx:7.1f}, {cy:7.1f})")
+            lines.append(("det pos", f"({cx:7.1f}, {cy:7.1f})"))
             self._append_kalman_lines(lines, tid, preds_by_id, states_by_id)
             return lines
 
@@ -117,11 +160,11 @@ class KeepyUpsPipeline:
             return
         if tid in preds_by_id:
             px, py = preds_by_id[tid]
-            lines.append(f"kpred    ({px:7.1f}, {py:7.1f})")
+            lines.append(("kpred", f"({px:7.1f}, {py:7.1f})"))
         if tid in states_by_id:
             sx, sy, svx, svy, _ = states_by_id[tid]
-            lines.append(f"kcorr    ({sx:7.1f}, {sy:7.1f})")
-            lines.append(f"kvel     ({svx:6.2f}, {svy:6.2f}) m/s")
+            lines.append(("kcorr", f"({sx:7.1f}, {sy:7.1f})"))
+            lines.append(("kvel", f"({svx:6.2f}, {svy:6.2f}) m/s"))
 
     def run(
         self,
@@ -240,17 +283,17 @@ class KeepyUpsPipeline:
             "lx": None, "ly": None, "rx": None, "ry": None,
         }
         if self.ball_tracker is not None:
-            states = self.ball_tracker.track_states
-            if states:
-                best = min(states, key=lambda s: (s[5], s[0]))
-                px_per_m = self.ball_tracker.px_per_m
+            state = self._freshest_track_state_m()
+            if state is not None:
+                x_m, y_m, vx, vy = state
                 # Tracker emits state in metres; convert position to pixels
                 # so it aligns with the frame extents pinned on the panel.
                 # Velocity stays in m/s.
-                samples["kx"] = best[1] * px_per_m
-                samples["ky"] = best[2] * px_per_m
-                samples["kvx"] = best[3]
-                samples["kvy"] = best[4]
+                px_per_m = self.ball_tracker.px_per_m
+                samples["kx"] = x_m * px_per_m
+                samples["ky"] = y_m * px_per_m
+                samples["kvx"] = vx
+                samples["kvy"] = vy
         if det.poses:
             kps = det.poses[0].keypoints
             if len(kps) > _RIGHT_TOE_IDX:
